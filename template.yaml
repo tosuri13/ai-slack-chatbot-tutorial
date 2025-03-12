@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: "AWS::Serverless-2016-10-31"
+
+Parameters:
+  SlackBotToken:
+    Type: "String"
+    Description: "Bot Token for Slack App"
+  SlackSigningSecret:
+    Type: "String"
+    Description: "Signing Secret for Slack App"
+
+Resources:
+  AiSlackChatbotApiGateway:
+    Type: "AWS::Serverless::Api"
+    Properties:
+      Name: "ai-slack-chatbot-api"
+      OpenApiVersion: "3.0.0"
+      StageName: "v1"
+
+  AiSlackChatbotTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: "ai-slack-chatbot-topic"
+
+  AiSlackChatbotApiPostFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      CodeUri: "."
+      Environment:
+        Variables:
+          SLACK_SIGNING_SECRET: !Ref SlackSigningSecret
+          WORKER_TOPIC_ARN: !Ref AiSlackChatbotTopic
+      Events:
+        AiSlackChatbotApiEvents:
+          Type: "Api"
+          Properties:
+            Path: "/"
+            Method: "POST"
+            RestApiId: !Ref AiSlackChatbotApiGateway
+      FunctionName: "ai-slack-chatbot-api-post-function"
+      Handler: "src.functions.api.post.function.handler"
+      MemorySize: 512
+      Role: !GetAtt AiSlackChatbotFunctionRole.Arn
+      Runtime: "python3.12"
+
+  AiSlackChatbotWorkerReplyFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      CodeUri: "."
+      Environment:
+        Variables:
+          SLACK_BOT_TOKEN: !Ref SlackBotToken
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      Events:
+        AiSlackChatbotSnsEvents:
+          Type: "SNS"
+          Properties:
+            FilterPolicy:
+              type:
+                - "app_mention"
+                - "message"
+            Topic: !Ref AiSlackChatbotTopic
+      FunctionName: "ai-slack-chatbot-worker-reply-function"
+      Handler: "src.functions.worker.reply.function.handler"
+      Role: !GetAtt AiSlackChatbotFunctionRole.Arn
+      Runtime: "python3.12"
+      Timeout: 60
+
+  AiSlackChatbotFunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "ai-slack-chatbot-function-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: 
+                  - "bedrock:InvokeModel"
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "sns:Publish"
+                  - "sns:Subscribe"
+                Resource: "*"
+      RoleName: "ai-slack-chatbot-function-role"
+
+Outputs:
+  RequestURL:
+    Description: "Request URL for Slack App"
+    Value: !Sub "https://${AiSlackChatbotApiGateway}.execute-api.${AWS::Region}.amazonaws.com/v1"

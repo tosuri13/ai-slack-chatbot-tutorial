@@ -8,3 +8,18 @@ dependencies = [
     "boto3>=1.37.11",
     "slack-sdk>=3.34.0",
 ]
+
+[tool.ruff.lint]
+unfixable = [
+    "F401", # unused import
+    "F841", # unused variable
+]
+ignore = [
+    "E501", # line too long
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.taskipy.tasks]
+export = "uv pip compile pyproject.toml > requirements.txt"
